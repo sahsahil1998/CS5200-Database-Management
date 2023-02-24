@@ -1,0 +1,101 @@
+---
+title: "Query Databases and Dataframes in R with SQL"
+author: "Sahil Sah"
+output: html_notebook
+---
+
+```{r}
+## Configurations
+library(sqldf)
+library(RSQLite)
+
+fpath = "c:/Users/sahsa/Documents/CS5200/Assignment 5 Query SQL/"
+dbfile = "MediaDB.db"
+
+
+## If database file already exists, we connect to it, otherwise create new
+
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(fpath,dbfile))
+```
+
+```{r}
+# Q1: In the R Notebook, connect to the SQLite MediaDB.db Download MediaDB.dbdatabase and then load, using SQL SELECT, the "invoice_items" table into a data frame called rs. Add a new column to rs for the item price called ItemPrice that is Quantity times UnitPrice. Using R, what is the 10% trimmed mean of the item prices (rounded to 2 decimals)? Do not use {sql} chunks for this question. You must use all R code; to do the SQL query use one of dbExecute(), dbGetQuery(), or dbSendQuery().
+
+# Load invoice_items table into a data frame
+rs <- dbGetQuery(dbcon, "SELECT * FROM invoice_items")
+# Add column for item price
+rs$ItemPrice <- rs$Quantity * rs$UnitPrice
+# Calculate 10% trimmed mean
+sortedItemPrices <- sort(rs$ItemPrice)
+n <- length(sortedItemPrices)
+low <- round(n * 0.1)
+high <- n - low
+trimmedMean <- mean(sortedItemPrices[(low+1):high])
+
+# Round result to 2 decimals and show results
+trimmedMean <- round(trimmedMean, 2)
+trimmedMean
+rs
+
+```
+
+```{r}
+# Q2: Using sqldf, write a SQL query against the data frame rs from the question above that finds the total amount for each invoice (i.e., the sum of the extended prices for the invoice_items in each invoice) and the number of items in the invoice. So, the result set contains rows that each have the invoice ID, the total, and the number of items. We could have done this against the database table as well, but we want to practice using SQL against an in-memory dataframe.
+
+invoiceTotals <- "SELECT InvoiceId, SUM(Quantity * UnitPrice) AS TotalAmount, 
+                        SUM(Quantity) AS NumberOfItems FROM rs GROUP BY InvoiceId"
+
+
+res <- sqldf(invoiceTotals)
+res
+
+```
+
+
+```{r}
+#Q3: Using R and the result from the prior question, create a line chart of the total number of items in an invoice (x axis) versus the average total amount of an invoice (i.e., the total paid for all invoices with those number of items averaged) (y axis). Add proper axis labels.
+
+avgTotalAmount <- tapply(res$TotalAmount, res$NumberOfItems, mean)
+
+
+plot(x = names(avgTotalAmount), y = avgTotalAmount, type = "o", 
+     xlab = "Number of Items in Invoice", ylab = "Average Total of Invoice")
+
+```
+
+```{r}
+# Show the first 10 rows of the invoices table and drop DiscPrice if it already exists
+dbGetQuery(dbcon, "SELECT * FROM invoices")
+dbExecute(dbcon, "ALTER TABLE invoices DROP COLUMN DiscPrice")
+```
+
+```{r}
+#Q4: Write and execute some combination of R code, loops in R, sqldf, dbWriteTable(), direct SQL ALTER and/or SQL UPDATE statements that applies a 10% discount to the total amount for each invoice if it has more than 10 items and stores that discounted amount in a new column in the invoices table called DiscPrice. If the invoice has 10 or fewer items of the same or of different items, then there is no discount and the DiscPrice is the original price. For example, if an item costs $10 and there are 11 items then the full price is $110 and the discounted price is $99. This cannot be solved fully in sqldf nor fully with just a single UPDATE. You will need to use a combination of techniques and some creativity. Any approach will be acceptable. 
+dbExecute(dbcon, "ALTER TABLE `invoices` ADD COLUMN DiscPrice DOUBLE")
+
+# check first if 
+for(i in 1:nrow(res)){
+  if(res$NumberOfItems[i] > 10) {
+    discountedprice <- (res$TotalAmount[i] - (res$TotalAmount[i] * 0.10))
+    res$DiscPrice[i] <- discountedprice
+    updatedResult <-paste0("UPDATE `invoices` SET `DiscPrice` = ", discountedprice, " WHERE `InvoiceId` = ", i)
+    dbExecute(dbcon, updatedResult)
+  }
+  else{
+    res$DiscPrice[i] <- res$TotalAmount[i]
+    updatedResult <- paste0("UPDATE `invoices` SET `DiscPrice` = ", res$TotalAmount[i], " WHERE `InvoiceId` = ", i)
+    dbExecute(dbcon, updatedResult)
+  }
+}
+
+```
+
+```{r}
+#Q5: Using a separate {r} chunk show that the update in (4) executed properly by displaying a part of the table. 
+# Showing first 20 rows of new table with DiscPrice working
+dbGetQuery(dbcon, "SELECT * FROM invoices LIMIT 20")
+```
+
+```{r}
+dbDisconnect(dbcon)
+```

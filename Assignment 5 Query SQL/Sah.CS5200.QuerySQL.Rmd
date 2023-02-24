@@ -1,0 +1,123 @@
+---
+title: "Query a Database with SQL"
+author: "Sahil Sah"
+output: html_notebook
+---
+
+```{r}
+## Configurations
+library(RSQLite)
+
+fpath = "c:/Users/sahsa/Documents/CS5200/Assignment 5 Query SQL/"
+dbfile = "MediaDB.db"
+
+
+## If database file already exists, we connect to it, otherwise create new
+
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(fpath,dbfile))
+```
+
+```{sql connection=dbcon}
+--Q1 :   What are the last name, city, state, and country of all customers who made at least one purchase and live either in Brazil or Canada? Do not list duplicates.
+SELECT DISTINCT customers.LastName, customers.City, customers.State, customers.Country
+FROM customers
+JOIN invoices
+ON customers.Customerid = invoices.Customerid AND (Country="Brazil" OR Country="Canada");
+```
+
+```{sql connection=dbcon}
+--Q2 : What are the titles of each album and the number of tracks on each album?
+SELECT title, COUNT(tracks.trackID)
+FROM albums 
+JOIN tracks 
+ON albums.Albumid=tracks.albumid 
+GROUP BY title;
+```
+
+```{sql connection=dbcon}
+--Q3 : List the number of tracks by genre, ordered from most to least, restricted to those genres for which there are at least five tracks.
+SELECT genres.Name, COUNT(tracks.TrackId) AS NumberOfTracks
+FROM genres
+JOIN tracks
+ON genres.GenreId = tracks.GenreId
+GROUP BY genres.Name
+HAVING COUNT(tracks.TrackId) >= 5
+ORDER BY NumberOfTracks DESC;
+```
+
+```{sql connection=dbcon}
+--Q4 : What is the average "tenure" of the employees in months
+SELECT ROUND(AVG(
+        (
+            strftime('%Y', 'now') * 12 + strftime('%m', 'now')
+        ) - (
+            strftime('%Y', HireDate) * 12 + strftime('%m', HireDate)
+        )
+    )
+) 
+AS AverageTenure
+FROM employees;
+```
+
+```{sql connection=dbcon}
+--Q5 : What are the total number of unique customers for each Brazilian state (e.g., MG, SP, etc.), ordered alphabetically by state, who made at least one purchase
+SELECT customers.State AS State, COUNT(DISTINCT customers.CustomerId) AS TotalCustomers
+FROM customers
+JOIN invoices
+ON customers.CustomerId = invoices.CustomerId
+WHERE customers.Country = 'Brazil'
+GROUP BY customers.State
+ORDER BY customers.State;
+
+```
+
+```{sql connection=dbcon}
+--Q6 : How many customers never made a purchase, i.e., they appear in the customers table but not in the invoices table.
+SELECT COUNT(Customerid) AS NumberOfCustomers
+FROM customers
+WHERE Customerid NOT IN
+(SELECT Customerid FROM invoices);
+```
+
+```{sql connection=dbcon}
+--Q7 : How many albums contain the substring "symphony" in the album title?
+SELECT COUNT(*) as NumberofAlbums
+FROM albums
+WHERE Title LIKE '%symphony%';
+```
+
+```{sql connection=dbcon}
+--Q8 : What is the total "time" of all tracks per artist in hours, i.e., add up the "Milliseconds" column in tracks? Display the artist's name and the time in hours rounded to two decimals. Only consider artists who published at least one track.
+SELECT artists.Name as ArtistName, ROUND(SUM(tracks.Milliseconds) / 1000.0 / 3600, 2) AS TotalTimeInHours
+FROM artists
+JOIN albums
+ON artists.ArtistId = albums.ArtistId
+JOIN tracks
+ON albums.AlbumId = tracks.AlbumId
+GROUP BY artists.Name
+HAVING SUM(tracks.Milliseconds) > 0;
+```
+
+```{sql connection=dbcon}
+--Q9 : Which playlists are the longest (greater than 0), regardless of type and format? List the playlist name(s) and the time in two columns: one for hours and one for minutes.
+SELECT pl.Name AS playlist_name,
+CAST(SUM(tr.Milliseconds) / (1000 * 60) AS INTEGER) AS TotalTimeinMinutes,
+CAST(SUM(tr.Milliseconds) / (1000 * 60.0 * 60.0) AS DOUBLE) AS TotalTimeinHours 
+FROM playlists pl JOIN playlist_track pt ON pl.PlaylistId = pt.PlaylistId JOIN tracks tr ON pt.TrackId = tr.TrackId 
+GROUP BY pl.PlaylistId, pl.Name 
+HAVING SUM(tr.Milliseconds) > 0 
+ORDER BY SUM(tr.Milliseconds) DESC
+```
+
+```{sql connection=dbcon}
+--Q10 : Which artists have composed tracks in more than three different genres?
+SELECT artists.Name as ArtistName, COUNT(DISTINCT tracks.GenreId) as NumberOfGenres
+FROM artists,albums,tracks 
+WHERE artists.Artistid=albums.Artistid AND albums.Albumid=tracks.Albumid
+GROUP BY artists.Name 
+HAVING count(DISTINCT tracks.GenreId)>3;
+```
+
+```{r}
+dbDisconnect(dbcon)
+```
