@@ -1,0 +1,263 @@
+---
+title: "Build Triggers for: Implement a Relational Database"
+author: "Sahil Sah"
+output: html_notebook
+---
+
+```{r}
+## Configurations
+library(RSQLite)
+
+fpath = "c:/Users/sahsa/Documents/CS5200/Assignment 6 Triggers/"
+dbfile = "authorinfo.sqlitedb"
+
+
+## If database file already exists, we connect to it, otherwise create new
+
+dbcon <- dbConnect(RSQLite::SQLite(), paste0(fpath,dbfile))
+```
+
+
+```{sql connection=dbcon}
+-- Enable foreign keys
+PRAGMA foreign_keys = ON
+```
+
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Author
+```
+
+```{sql connection=dbcon}
+CREATE TABLE Author(
+aid NUMBER PRIMARY KEY NOT NULL,
+name TEXT NOT NULL,
+email TEXT,
+affiliation NUMBER NOT NULL,
+FOREIGN KEY(affiliation) REFERENCES Affiliation(affId)
+)
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Affiliation
+```
+
+```{sql connection=dbcon}
+CREATE TABLE Affiliation(
+  affID NUMBER PRIMARY KEY,
+  affField TEXT NOT NULL
+)
+
+```
+
+
+```{sql connection=dbcon}
+-- Extensible affiliation list
+INSERT INTO Affiliation (affID, affField)
+VALUES 
+    (100, "PT"),
+    (101, "FT"),
+    (102, "Contract");
+```
+
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS Module
+```
+
+```{sql connection=dbcon}
+CREATE TABLE Module(
+num TEXT PRIMARY KEY,
+title TEXT NOT NULL,
+lengthInMin NUMBER NOT NULL
+)
+```
+
+```{sql connection=dbcon}
+-- Trigger 3: This is a trigger that enforces a length requirement for the Module table. Specifically, it is defined to fire before an insert operation is executed on the Module table, and it checks whether the value being inserted into the lengthInMin field is greater than zero. If the value is less than or equal to zero, the trigger raises an error using the RAISE statement with the ABORT action, which aborts the insert operation.
+CREATE TRIGGER IF NOT EXISTS minutesCheck
+BEFORE INSERT ON Module 
+FOR EACH ROW 
+BEGIN
+    SELECT 
+        CASE 
+            WHEN NEW.lengthinMin <= 0 
+            THEN RAISE(ABORT, 'The length cannot be less then 0 minutes.') 
+        END;
+END;
+```
+
+```{sql connection=dbcon}
+--Trigger 1: This is a trigger for checking that the email field in the Author table is a valid email address. The trigger is defined to fire before an insert operation is executed on the Author table, and it checks whether the email field being inserted matches a specific pattern for a valid email address. If the email value does not match the pattern, the trigger raises an error using the RAISE statement with the ABORT action, which aborts the insert operation.
+CREATE TRIGGER IF NOT EXISTS checkEmail 
+   BEFORE INSERT ON author
+   
+BEGIN
+   SELECT
+      CASE
+	      WHEN NEW.email NOT LIKE '%_@_%.__%' 
+	      THEN RAISE (ABORT,'Please enter a correct email address for the author.')
+       END;
+END;
+```
+
+```{sql connection=dbcon}
+-- Trigger 2: This is a trigger for ensuring that the name and email fields in the Author table are unique for each row. The trigger is defined to fire before an insert operation is executed on the Author table, and it checks whether the name or email field being inserted already exists in the Author table. If a duplicate name or email is found, the trigger raises an error using the RAISE statement with the ABORT action, which aborts the insert operation.
+
+CREATE TRIGGER IF NOT EXISTS uniqueAuthorTable 
+BEFORE INSERT ON Author 
+FOR EACH ROW 
+BEGIN
+    SELECT 
+        CASE 
+            WHEN NEW.email IN (SELECT email FROM Author) 
+            OR NEW.name IN (SELECT name FROM Author) 
+            THEN RAISE(ABORT, 'Email and Name must both be unique to be inserted.') 
+        END;
+END;
+```
+
+```{sql connection=dbcon}
+-- testing author table with affiliation 
+INSERT INTO Author (aid, name, email, affiliation) VALUES
+    (1, "Rick Riordon", "riordan.rick@gmail.com", 101),
+    (2, "J. R. R. Tolkien", "jrrtolkien@hotmail.com", 101),
+    (3, "Mark Twain", "mark.twain@umsystem.edu", 100),
+    (4, "Charles Dickens", "dickensc123@gmail.com", 101),
+    (5, "Sahil Sah", "sahsahil1998@yahoo.com", 102 );
+```
+
+```{sql connection=dbcon}
+--Tests for trigger 1: unique columns in author
+
+-- insert a new author with unique name and email values
+INSERT INTO Author (aid, name, email, affiliation) VALUES (6, 'Margaret Atwood', 'atwoodm@example.com', 100);
+-- this should work without errors
+
+-- try to insert a new author with duplicate name value
+INSERT INTO Author (aid, name, email, affiliation) VALUES (7, 'Margaret Atwood', 'margaret@example.com', 102);
+-- this should raise an error and abort the insert operation, because a row with the same 'name' value already exists in the 'Author' table
+
+-- try to insert a new author with duplicate email value
+INSERT INTO Author (aid, name, email, affiliation) VALUES (8, 'Stephen King', 'atwoodm@example.com', 101);
+-- this should raise an error and abort the insert operation, because a row with the same 'email' value already exists in the 'Author' table
+```
+
+```{sql connection=dbcon}
+--Tests for trigger 2: email checking
+-- insert a new author with a valid email address
+INSERT INTO Author (aid, name, email, affiliation) VALUES (9, 'J.K. Rowling', 'jkrowling@gmail.com', 101);
+-- this should work without errors
+
+-- try to insert a new author with an invalid email address
+INSERT INTO Author (aid, name, email, affiliation) VALUES (10, 'George R.R. Martin', 'george.com', 102);
+-- this should raise an error and abort the insert operation, because the email address 'george.com' is not a valid email address
+```
+
+
+```{sql connection=dbcon}
+SELECT * FROM Author;
+```
+
+```{sql connection=dbcon}
+-- testing module table values
+INSERT INTO Module (num, title, lengthInMin) VALUES
+    ("55", "The Lightning Thief", 180),
+    ("128", "Huckleberry Finn", 250),
+    ("42", "The Fellowship of the Ring", 550),
+    ("3", "Moby Dick", 3600);
+    
+```
+
+```{sql connection=dbcon}
+--Tests for trigger 3 with invalid lengths in minutes
+
+-- Insert a new module with a valid lengthInMin value
+INSERT INTO Module (num, title, lengthInMin) VALUES ("123", "New Module 1", 30);
+-- This should work without errors
+
+INSERT INTO Module (num, title, lengthinMin) VALUES (500, "Healing Hands", -222);
+-- This should raise an error and abort the insert operation, because the lengthInMin value is less than or equal to 0.
+
+INSERT INTO Module (num, title, lengthinMin) VALUES (500, "Morrowind", -0);
+-- This should raise an error and abort the insert operation, because the lengthInMin value is less than or equal to 0.
+```
+
+
+```{sql connection=dbcon}
+SELECT * FROM Module;
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS AuthorModule
+```
+
+```{sql connection=dbcon}
+DROP TABLE IF EXISTS AuthorModuleAudit
+```
+
+```{sql connection=dbcon}
+CREATE TABLE AuthorModule (
+ auth_id NUMBER NOT NULL,
+ mod_id TEXT NOT NULL,
+ PRIMARY KEY(auth_id, mod_id)
+ FOREIGN KEY(auth_id) REFERENCES Author(aid),
+ FOREIGN KEY(mod_id) REFERENCES Module(num)
+)
+```
+
+```{sql connection=dbcon}
+--new table added to show logs whenever something is deleted from author module
+CREATE TABLE AuthorModuleAudit(
+  auth_id INTEGER NOT NULL,
+  mod_id TEXT NOT NULL,
+  del_id DATETIME NOT NULL
+)
+```
+
+```{sql connection=dbcon}
+-- Trigger 4: This is a trigger that creates an audit trail for the AuthorModule table when rows are deleted from it. The trigger is defined to fire after a row is deleted from AuthorModule table. For every row that is deleted, the trigger executes the SQL statement to insert a record into the author_module_audit_table table. This new record includes the values of the author_id and module_id fields from the deleted row, as well as the current datetime.
+CREATE TRIGGER IF NOT EXISTS AuthModLogs
+AFTER DELETE ON AuthorModule
+FOR EACH ROW
+BEGIN
+  INSERT INTO AuthorModuleAudit(auth_id, mod_id, del_id)
+  VALUES (OLD.auth_id, OLD.mod_id, datetime("now"));
+END;
+```
+
+```{sql connection=dbcon}
+-- testing AuthorModule table values
+INSERT INTO AuthorModule (auth_id, mod_id) VALUES
+ (1, "55"),
+ (2, "128"),
+ (3, "3")
+```
+
+```{sql connection=dbcon}
+SELECT * FROM AuthorModule
+```
+
+```{sql connection=dbcon}
+--deleting a row to check audit trigger
+DELETE 
+FROM AuthorModule
+WHERE (auth_id = 1 AND mod_id = "55")
+```
+
+```{sql connection=dbcon}
+--checking to see if row was deleted
+SELECT * 
+FROM AuthorModule
+```
+
+```{sql connection=dbcon}
+--now checking if trigger worked
+SELECT * FROM AuthorModuleAudit
+```
+
+```{r}
+dbDisconnect(dbcon)
+```
+
+
